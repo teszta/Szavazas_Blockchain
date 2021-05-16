@@ -14,13 +14,21 @@ contract Szavazas {
         bool szavazott;
     }
 
+    struct indulok {
+        string induloNeve;
+        uint kapottSzavazat;
+        string kerulet;
+    }
+
     mapping(uint => szavazas) private szavazatok;
     mapping(address => szavazo) public szavazokTomb;
+    mapping(address => indulok) public indulokTomb;
 
     uint private osszes = 0;
-    uint public eredmeny = 0;
-    uint public osszesSzavazo = 0;
-    uint public osszesSzavazat = 0;
+    uint public eredmeny;
+    uint public osszesIndulo;
+    uint public osszesSzavazo;
+    uint public osszesSzavazat;
     
     address public szavazasAdminAddress;
     string public szavazasAdminNeve;
@@ -34,6 +42,10 @@ contract Szavazas {
         szavazasAdminNeve = _szavazasAdminNeve;
         szavazoKerulet = _szavazoKerulet;
         Szavazas_Statusz = Statusz.Meghirdetve;
+        eredmeny = 0;
+        osszesIndulo = 0;
+        osszesSzavazo = 0;
+        osszesSzavazat = 0;
     }
 
     modifier csakAdmin() {
@@ -46,10 +58,21 @@ contract Szavazas {
         _;
     }
 
+    modifier KeruletEllenorzes(string memory _kerulet) {
+        require(compareStrings(_kerulet, szavazoKerulet));
+        _;
+    }
+
     event szavazoHozzaadva(address szavazo);
     event szavazasStart();
     event szavazasBefejezes(uint eredmeny);
     event szavazatLeadva(address szavazo);
+    event szavazasUjraindul();
+    event induloHozzaadva(address indulo);
+
+    function compareStrings(string memory a, string memory b) public view returns (bool) {
+        return (keccak256(bytes(a)) == keccak256(bytes(b)));
+    }
 
     function UjSzavazo(address _szavazoAddress, string memory _szavazoNeve, string memory _kerulet) public StatuszEllenorzes(Statusz.Meghirdetve) csakAdmin {
         szavazo memory sz;
@@ -61,24 +84,35 @@ contract Szavazas {
         emit szavazoHozzaadva(_szavazoAddress);
     }
 
+    function UjIndulo(address _induloAddress, string memory _induloNeve, string memory _kerulet) public StatuszEllenorzes(Statusz.Meghirdetve) {
+        indulok memory i;
+        i.induloNeve = _induloNeve;
+        i.kerulet = _kerulet;
+        i.kapottSzavazat = 0;
+        indulokTomb[_induloAddress] = i;
+        osszesIndulo++;
+        emit induloHozzaadva(_induloAddress);
+    }
+
     function SzavazasKezdese() public StatuszEllenorzes(Statusz.Meghirdetve) csakAdmin {
         Szavazas_Statusz = Statusz.SzavazasAlatt;
         emit szavazasStart();
     }
 
-    function szavazatLeadas(address _valasztott) public StatuszEllenorzes(Statusz.SzavazasAlatt) returns (bool szavazott) {
+    function szavazatLeadas(address _valasztott) public StatuszEllenorzes(Statusz.SzavazasAlatt) KeruletEllenorzes(szavazokTomb[msg.sender].kerulet) returns (bool szavazott) {
         bool talalat = false;
         if (bytes(szavazokTomb[msg.sender].szavazoNeve).length != 0 && !szavazokTomb[msg.sender].szavazott) {
-            szavazokTomb[msg.sender].szavazott = true;
-            szavazas memory sz;
-            sz.szavazoAddress = msg.sender;
-            sz.valasztott = true;
-            if (sz.valasztott) {
+            if(bytes(indulokTomb[_valasztott].induloNeve).length != 0) {
+                indulokTomb[_valasztott].kapottSzavazat++;
+                szavazokTomb[msg.sender].szavazott = true;
+                szavazas memory sz;
+                sz.szavazoAddress = msg.sender;
+                sz.valasztott = true;
                 osszes++;
-            }
-            szavazatok[osszesSzavazat] = sz;
-            osszesSzavazat++;
-            talalat = true;
+                szavazatok[osszesSzavazat] = sz;
+                osszesSzavazat++;
+                talalat = true;  
+            } 
         }
         emit szavazatLeadva(msg.sender);
         return talalat;
@@ -88,6 +122,15 @@ contract Szavazas {
         Szavazas_Statusz = Statusz.Vege;
         eredmeny = osszes;
         emit szavazasBefejezes(eredmeny);
+    }
+
+    function szavazasReset() public StatuszEllenorzes(Statusz.Vege) csakAdmin {
+        Szavazas_Statusz = Statusz.Meghirdetve;
+        osszes = 0;
+        eredmeny = 0;
+        osszesSzavazo = 0;
+        osszesSzavazat = 0;
+        emit szavazasUjraindul();
     }
     
 }
